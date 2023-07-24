@@ -1,30 +1,24 @@
 from constraint import AlldiffConstraint, LeadingZeroConstraint
 from functools import reduce
-from utils import normalize_equation, split_equation, create_subproblem
+from utils import normalize_equation, parse_input, create_subproblem, read_file
 
 class CryptarithmeticProblem:
-    def __init__(self, equation):
-        self.equation = normalize_equation(equation)
-        self.variables, self.operators, self.operands, self.result = split_equation(self.equation)
-        self.domains = {var: [i for i in range(10)] for var in self.variables}
+    def __init__(self, file_path):
+        self.equation = normalize_equation(read_file(file_path))
+        self.variables, self.domains, self.operators, self.operands, self.result = parse_input(self.equation)
         self.constraints = [
             LeadingZeroConstraint(self.variables, self.domains, self.operands, self.result),
             AlldiffConstraint(self.variables, self.domains)
         ]
         self.subproblems, self.impact = create_subproblem(self.operands, self.operators, self.result)
-
-    def all_assigned(self):
-        return all(variable is not None for variable in self.variables)
+        #preProcess
+        for constraint in self.constraints:
+            if constraint.preProcess():
+                self.constraints.remove(constraint)
     
     def check_subproblem(self, subproblem, impact, carry):
-        positive = sum(self.variables[char] * impact[char][0] for char in subproblem)
-        negative = sum(self.variables[char] * impact[char][1] for char in subproblem)
-        positive += carry
-
-        if positive < 0 or (positive % 10 - negative % 10) != 0:
-            return None
-
-        return (positive // 10) - (negative // 10)
+        total = sum(self.variables[char] * impact[char] for char in subproblem) + carry
+        return total / 10 if total % 10 == 0 else None
 
     def solve_subproblem(self, subproblem, impact, charIndex, spIndex, carry):
         if charIndex == len(subproblem):
@@ -35,7 +29,7 @@ class CryptarithmeticProblem:
 
         if self.variables[char] is None:
             current_domain = self.domains[char].copy()
-            
+        
             common_domain = reduce(set.intersection, (set(c.satisfied(char)) for c in self.constraints))
             self.domains[char] = list(common_domain)
 
@@ -44,20 +38,11 @@ class CryptarithmeticProblem:
                 assign = self.solve_subproblem(subproblem, impact, charIndex + 1, spIndex, carry)
                 if assign is not None:
                     return assign
-
+            
             self.variables[char] = None
             self.domains[char] = current_domain
         else:
             return self.solve_subproblem(subproblem, impact, charIndex + 1, spIndex, carry)
-    
-    def is_consistent(self):
-        carry = 0
-        for subproblem, impact in zip(self.subproblems, self.impact):
-            carry = self.check_subproblem(subproblem, impact, carry)
-            if carry is None:
-                return False
-        return carry == 0
-
 
     def backtracking_search(self, index=0, carry=0):
         if len(self.variables) > 10:
@@ -67,3 +52,4 @@ class CryptarithmeticProblem:
             return self.variables if carry == 0 else None
 
         return self.solve_subproblem(self.subproblems[index], self.impact[index], 0, index, carry)
+    
